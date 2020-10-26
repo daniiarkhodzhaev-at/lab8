@@ -1,0 +1,11 @@
+# vim tmp files
+*.swp
+*.swo
+
+# python cache
+__pycache__/
+
+# binaries
+*.o
+*.so
+main
