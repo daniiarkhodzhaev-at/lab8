@@ -15,6 +15,8 @@ static gdouble MAX_CANNON_SPEED = 10.0;
 static gdouble K = 0.999;
 static gdouble AY = 0.1;
 static gdouble CHARGE_SPEED = 0.02;
+static const char *LEADERBOARD_FN = "leaderboard";
+static const char *TMP_FN = ".tmp.leaderboard";
 
 static gint X0 = 50,
             Y0 = 50,
@@ -39,10 +41,10 @@ struct object_list {
 };
 
 /* containers */
-static GtkWidget *window, *canvas;
+static GtkWidget *window, *canvas, *entry_text;
 static GooCanvasItem *root, *cannon;
 static gint score = 0;
-static gchar *username = "";
+static gchar *username;
 static gint cannon_charge = 0;
 static gdouble cannon_rot = 0;
 static gboolean pressed = FALSE;
@@ -111,6 +113,63 @@ int setup (char *name, gint width, gint height) {
     NAME = malloc(strlen(name) + 1);
     memcpy (NAME, name, strlen(name) + 1);
     start_time = malloc (sizeof (struct timespec));
+    pid_t pid;
+    pid = fork ();
+    if (pid == 0) {
+        execl ("/usr/bin/touch", "touch", LEADERBOARD_FN, NULL);
+    }
+    return 0;
+}
+
+/**
+ * This function updates leaderboard. Adds name and score to file.
+ *
+ * @return (gint) Exit code
+ */
+int update_leaderboard () {
+    FILE *fd_l = fopen (LEADERBOARD_FN, "r");
+    FILE *fd_t = fopen (TMP_FN, "w");
+    if (!fd_l) {
+        g_print ("Failed to open stream\n");
+        return -1;
+    }
+    if (!fd_t) {
+        g_print ("Failed to open stream\n");
+        return -1;
+    }
+    gboolean added = FALSE;
+    gulong *pN = malloc (sizeof (gulong));
+    gint *pScore = malloc (sizeof (gint));
+    *pN = 0;
+    ssize_t nread;
+    gchar **pLine = malloc (sizeof (char *));
+    *pLine = NULL;
+    gchar *pName = malloc (256 * sizeof (char *));
+    while ((nread = getline (pLine, pN, fd_l)) != -1) {
+        sscanf (*pLine, "%s %i", pName, pScore);
+        if (*pScore < score && (!added)) {
+            fprintf (fd_t, "%s %i\n", username, score);
+            added = TRUE;
+        }
+        fprintf (fd_t, "%s %i\n", pName, *pScore);
+        free (*pLine);
+        *pLine = NULL;
+        *pN = 0;
+    }
+    if (!added) {
+        fprintf (fd_t, "%s %i\n", username, score);
+    }
+    fclose (fd_l);
+    fclose (fd_t);
+    
+    free (pN);
+    free (pScore);
+
+    pid_t pid;
+    pid = fork ();
+    if (pid == 0) {
+        execl ("/usr/bin/mv", "mv", TMP_FN, LEADERBOARD_FN, NULL);
+    }
     return 0;
 }
 
@@ -124,7 +183,7 @@ int init () {
     char **argv = &NAME;
 
     GtkWidget *hbox, *c_hbox, *vbox, *halign, *stopBtn, *showLeaderbordBtn,
-              *pop_window, *entry_text_label, *entry_text, *confirm_button,
+              *pop_window, *entry_text_label, *confirm_button,
               *pop_vbox, *pop_hbox_entry, *pop_hbox_confirm,
               *pop_vbox_spacer_top, *pop_vbox_spacer_mid, *pop_vbox_spacer_bot,
               *pop_hbox_entry_spacer_lft, *pop_hbox_entry_spacer_rt,
@@ -370,6 +429,7 @@ main (int argc, char *argv[])
     mainloop ();
 
     g_print ("Your score is %i.\n", score);
+    update_leaderboard();
 
     return 0;
 }
@@ -445,6 +505,10 @@ on_username_entered (GtkWidget *confirm_button,
                      GdkEvent *event,
                      gpointer  pop_window)
 {
+    int _len = gtk_entry_get_text_length (GTK_ENTRY (entry_text));
+    username = realloc (username, (_len + 1) * sizeof (char));
+    memcpy (username, gtk_entry_get_text (GTK_ENTRY (entry_text)), (_len));
+    *(username + _len) = 0;
     gtk_widget_destroy (GTK_WIDGET (pop_window));
     gtk_widget_show_all (window);
 
